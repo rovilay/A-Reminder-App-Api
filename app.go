@@ -26,4 +26,5 @@ func New(router *mux.Router, db *sqlx.DB, cacheApi *CacheAPI) (app App, err erro
 func (app *App) registerHandlers(router *mux.Router) {
 	router.HandleFunc("/", app.Welcome).Methods(http.MethodGet)
 	router.HandleFunc("/api/v1/reminders", app.CreateReminder).Methods(http.MethodPost)
+	router.HandleFunc("/api/v1/reminders/{id}", app.GetSingleReminder).Methods(http.MethodGet)
 }
