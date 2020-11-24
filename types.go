@@ -2,14 +2,22 @@ package main
 
 import "time"
 
+type ReminderPayload struct {
+	Message   string    `json:"message" validate:"required"`
+	Time      time.Time `json:"time" validate:"required"`
+	Latitude  float32   `json:"latitude" validate:"required,latitude"`
+	Longitude float32   `json:"longitude" validate:"required, longitude"`
+}
+
 type Reminder struct {
-	ID        string    `json:"id,omit_empty"`
+	ID        string    `json:"id"`
 	Message   string    `json:"message"`
 	Time      time.Time `json:"time"`
+	Status    string    `json:"status"`
 	Latitude  float32   `json:"latitude"`
 	Longitude float32   `json:"longitude"`
 	CreatedAt string    `json:"created_at"`
-	UpdatedAt string    `json:"updated_at,omit_empty"`
+	UpdatedAt string    `json:"updated_at"`
 }
 
 type APIResponse struct {

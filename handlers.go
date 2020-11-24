@@ -4,10 +4,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/jmoiron/sqlx"
 )
+
+// type APIHandlers interface {
+// 	validator ValidationAPI
+// }
+
+type ReminderHandlers struct {
+	validator *ReminderValidator
+	service   *ServiceAPI
+}
+
+func NewReminderHandlers(db *sqlx.DB, cache *CacheAPI) *ReminderHandlers {
+	validator, err := NewReminderValidator()
+	if err != nil {
+		log.Fatal(err)
+	}
+	service := NewServiceAPI(db, cache)
+
+	rh := &ReminderHandlers{
+		validator: validator,
+		service:   service,
+	}
+
+	return rh
+}
 
 func (app *App) Welcome(res http.ResponseWriter, req *http.Request) {
 	res.Header().Set("Content-Type", "application/json")
