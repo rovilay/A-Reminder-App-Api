@@ -6,7 +6,7 @@ type ReminderPayload struct {
 	Message   string    `json:"message" validate:"required"`
 	Time      time.Time `json:"time" validate:"required"`
 	Latitude  float32   `json:"latitude" validate:"required,latitude"`
-	Longitude float32   `json:"longitude" validate:"required, longitude"`
+	Longitude float32   `json:"longitude" validate:"required,longitude"`
 }
 
 type Reminder struct {
@@ -20,6 +20,13 @@ type Reminder struct {
 	UpdatedAt string    `json:"updated_at"`
 }
 
+type Pagination struct {
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+	Total  int `json:"total"`
+}
+
 type APIResponse struct {
-	Data interface{} `json:"data"`
+	Data       interface{} `json:"data"`
+	Pagination interface{} `json:"pagination,omitempty"`
 }

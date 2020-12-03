@@ -2,32 +2,36 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
 )
 
-// type APIHandlers interface {
-// 	validator ValidationAPI
-// }
+const (
+	Incomplete = "incomplete"
+	Complete   = "complete"
+)
 
-type ReminderHandlers struct {
+type ReminderHandler struct {
 	validator *ReminderValidator
 	service   *ServiceAPI
 }
 
-func NewReminderHandlers(db *sqlx.DB, cache *CacheAPI) *ReminderHandlers {
+func NewReminderHandler(db *sqlx.DB, cache *CacheAPI) *ReminderHandler {
 	validator, err := NewReminderValidator()
 	if err != nil {
 		log.Fatal(err)
 	}
 	service := NewServiceAPI(db, cache)
 
-	rh := &ReminderHandlers{
+	rh := &ReminderHandler{
 		validator: validator,
 		service:   service,
 	}
@@ -35,15 +39,7 @@ func NewReminderHandlers(db *sqlx.DB, cache *CacheAPI) *ReminderHandlers {
 	return rh
 }
 
-func (app *App) Welcome(res http.ResponseWriter, req *http.Request) {
-	res.Header().Set("Content-Type", "application/json")
-	res.WriteHeader(http.StatusOK)
-	res.Write([]byte(`{"message": "Welcome to A-Reminder-App API"}`))
-
-	return
-}
-
-func (app *App) CreateReminder(res http.ResponseWriter, req *http.Request) {
+func (rh *ReminderHandler) CreateReminder(res http.ResponseWriter, req *http.Request) {
 	res.Header().Set("Content-Type", "application/json")
 
 	b, err := ioutil.ReadAll(req.Body)
@@ -54,8 +50,9 @@ func (app *App) CreateReminder(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	body := &Reminder{}
+	body := &ReminderPayload{}
 	err = json.Unmarshal(b, body)
+
 	if err != nil {
 		res.WriteHeader(http.StatusBadRequest)
 		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
@@ -63,14 +60,22 @@ func (app *App) CreateReminder(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	query := "INSERT INTO reminders (message, time, longitude, latitude) VALUES ($1, $2, $3, $4) RETURNING *"
-	result := &Reminder{}
-	err = app.db.
-		QueryRow(query, body.Message, body.Time, body.Longitude, body.Latitude).
-		Scan(
-			&result.ID, &result.Message, &result.Time,
-			&result.Longitude, &result.Latitude, &result.CreatedAt, &result.UpdatedAt,
-		)
+	vErr := rh.validator.Validate(body)
+	if vErr != nil {
+		b, _ := json.Marshal(vErr)
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write(b)
+
+		return
+	}
+
+	r := Reminder{
+		Message:   body.Message,
+		Time:      body.Time,
+		Latitude:  body.Latitude,
+		Longitude: body.Longitude,
+	}
+	result, err := rh.service.CreateReminder(r)
 	if err != nil {
 		res.WriteHeader(http.StatusBadRequest)
 		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
@@ -78,19 +83,8 @@ func (app *App) CreateReminder(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	rb, err := json.Marshal(result)
-	if err != nil {
-		res.WriteHeader(http.StatusInternalServerError)
-		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
-
-		return
-	}
-
-	// save to cache
-	err = app.cache.Set(fmt.Sprintf("reminders:%s", result.ID), rb)
-
-	r := &APIResponse{Data: result}
-	bb, err := json.Marshal(r)
+	rs := &APIResponse{Data: result}
+	bb, err := json.Marshal(rs)
 	if err != nil {
 		res.WriteHeader(http.StatusInternalServerError)
 		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
@@ -104,55 +98,19 @@ func (app *App) CreateReminder(res http.ResponseWriter, req *http.Request) {
 	return
 }
 
-func (app *App) GetSingleReminder(res http.ResponseWriter, req *http.Request) {
+func (rh *ReminderHandler) GetSingleReminder(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "application/json")
+
 	vars := mux.Vars(req)
 	id := vars["id"]
-	result := &Reminder{}
 
-	// check cache first
-	s, err := app.cache.Get(fmt.Sprintf("reminders:%s", id))
-	if err == nil {
-		err := json.Unmarshal([]byte(s), result)
-		if err != nil {
-			res.WriteHeader(http.StatusInternalServerError)
-			res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
-
-			return
-		}
-		r := &APIResponse{Data: result}
-
-		bb, err := json.Marshal(r)
-
-		res.WriteHeader(http.StatusOK)
-		res.Write([]byte(bb))
-
-		return
-	}
-
-	query := "SELECT * FROM reminders WHERE id=$1"
-	err = app.db.QueryRow(query, id).
-		Scan(
-			&result.ID, &result.Message, &result.Time,
-			&result.Longitude, &result.Latitude, &result.CreatedAt, &result.UpdatedAt,
-		)
+	result, err := rh.service.GetReminderByID(id)
 	if err != nil {
 		res.WriteHeader(http.StatusNotFound)
 		res.Write([]byte(`{"error": not found}`))
 
 		return
 	}
-
-	// save to cache
-	rb, err := json.Marshal(result)
-	if err != nil {
-		res.WriteHeader(http.StatusInternalServerError)
-		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
-
-		return
-	}
-
-	// save to cache
-	err = app.cache.Set(fmt.Sprintf("reminders:%s", result.ID), rb)
 
 	r := &APIResponse{Data: result}
 	bb, err := json.Marshal(r)
@@ -165,6 +123,197 @@ func (app *App) GetSingleReminder(res http.ResponseWriter, req *http.Request) {
 
 	res.WriteHeader(http.StatusOK)
 	res.Write(bb)
+
+	return
+}
+
+func (rh *ReminderHandler) GetReminders(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "application/json")
+
+	statusQuery := strings.ToLower(req.URL.Query().Get("status"))
+	limitQuery := strings.ToLower(req.URL.Query().Get("limit"))
+	offsetQuery := strings.ToLower(req.URL.Query().Get("offset"))
+
+	if limitQuery == "" {
+		limitQuery = "10"
+	}
+	if offsetQuery == "" {
+		offsetQuery = "0"
+	}
+
+	var err error
+	if statusQuery != "" && statusQuery != Incomplete && statusQuery != Complete {
+		err = errors.New("status can either be incomplete or complete ")
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte(`{"error": status can either be incomplete or complete }`))
+
+		return
+	}
+
+	limit := 10
+	offset := 0
+
+	if limit, err = strconv.Atoi(limitQuery); err != nil {
+		err = errors.New("limit and offset must be positive integers")
+
+		return
+	}
+	if offset, err = strconv.Atoi(offsetQuery); err != nil {
+		err = errors.New("limit and offset must be positive integers")
+
+		return
+	}
+
+	var result []*Reminder
+	var count int
+	if statusQuery != "" {
+		if count, err = rh.service.GetRemindersCount("WHERE status=$1", statusQuery); err == nil {
+			query := "SELECT * FROM reminders WHERE status=$1 LIMIT $2 OFFSET $3;"
+			result, err = rh.service.GetReminders(query, statusQuery, limit, offset)
+		}
+	} else if count, err = rh.service.GetRemindersCount(""); err == nil {
+		query := "SELECT * FROM reminders LIMIT $1 OFFSET $2;"
+		result, err = rh.service.GetReminders(query, limit, offset)
+	}
+
+	if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte(`{"error": Something went wrong}`))
+
+		return
+	}
+
+	pagination := Pagination{
+		Limit:  limit,
+		Offset: offset,
+		Total:  count,
+	}
+
+	r := &APIResponse{Data: result, Pagination: pagination}
+	bb, err := json.Marshal(r)
+	if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
+
+		return
+	}
+
+	res.WriteHeader(http.StatusOK)
+	res.Write(bb)
+
+	return
+}
+
+func (rh *ReminderHandler) UpdateReminder(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "application/json")
+
+	vars := mux.Vars(req)
+	id := vars["id"]
+
+	// read payload
+	b, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
+
+		return
+	}
+
+	body := &ReminderPayload{}
+	err = json.Unmarshal(b, body)
+
+	if err != nil {
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
+
+		return
+	}
+
+	// validate payload
+	vErr := rh.validator.Validate(body)
+	if vErr != nil {
+		b, _ := json.Marshal(vErr)
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write(b)
+
+		return
+	}
+
+	// update data
+	r := Reminder{
+		Message:   body.Message,
+		Time:      body.Time,
+		Latitude:  body.Latitude,
+		Longitude: body.Longitude,
+	}
+	result, err := rh.service.UpdateReminder(id, r)
+	if err != nil {
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
+
+		return
+	}
+
+	rs := &APIResponse{Data: result}
+	bb, err := json.Marshal(rs)
+	if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
+
+		return
+	}
+
+	res.WriteHeader(http.StatusOK)
+	res.Write(bb)
+
+	return
+}
+
+func (rh *ReminderHandler) MarkReminderAsComplete(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "application/json")
+
+	vars := mux.Vars(req)
+	id := vars["id"]
+
+	result, err := rh.service.UpdateReminderStatus(id, Complete)
+	if err != nil {
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
+
+		return
+	}
+
+	rs := &APIResponse{Data: result}
+	bb, err := json.Marshal(rs)
+	if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
+
+		return
+	}
+
+	res.WriteHeader(http.StatusOK)
+	res.Write(bb)
+
+	return
+}
+
+func (rh *ReminderHandler) DeleteReminder(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "application/json")
+
+	vars := mux.Vars(req)
+	id := vars["id"]
+
+	err := rh.service.DeleteReminder(id)
+	if err != nil {
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte(fmt.Sprintf(`{"error": %v}`, err)))
+
+		return
+	}
+
+	res.WriteHeader(http.StatusOK)
+	res.Write([]byte("{ success: true }"))
 
 	return
 }

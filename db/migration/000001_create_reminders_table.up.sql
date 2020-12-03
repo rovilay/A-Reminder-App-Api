@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-CREATE TYPE status AS ENUM ('incomplete', 'completed');
+CREATE TYPE status AS ENUM ('incomplete', 'complete');
 
 CREATE TABLE "reminders" (
     "id" UUID DEFAULT gen_random_uuid (),

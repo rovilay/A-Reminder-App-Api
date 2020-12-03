@@ -72,3 +72,15 @@ func (ch *CacheAPI) Get(key string) (string, error) {
 
 	return s, nil
 }
+
+func (ch *CacheAPI) Del(key string) (err error) {
+	conn := ch.pool.Get()
+	defer conn.Close()
+
+	_, err = conn.Do("DEL", key)
+	if err != nil {
+		log.Printf("ERROR: fail delete key %s, error %v", key, err.Error())
+	}
+
+	return
+}
