@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,28 +9,9 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
-
-func initDatabase(pgHost, pgPort, pgUser, pgPassword, dbName string) *sqlx.DB {
-	log.Println("Connecting to Database:", pgHost)
-
-	db, err := sqlx.Connect("postgres", fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		pgHost,
-		pgPort,
-		pgUser,
-		pgPassword,
-		dbName,
-	))
-	if err != nil {
-		log.Fatalf("Error: connecting to Database %v", err)
-	}
-
-	log.Println("Connected to Database")
-	return db
-}
 
 func main() {
 	// envs
@@ -45,13 +25,15 @@ func main() {
 	pgUser := os.Getenv("PG_USER")
 	pgPassword := os.Getenv("PG_PASSWORD")
 	dbName := os.Getenv("DB_NAME")
+	redisHost := os.Getenv("REDIS_HOST")
+	redisPort := os.Getenv("REDIS_PORT")
 
 	// init DB
 	db := initDatabase(pgHost, pgPort, pgUser, pgPassword, dbName)
 	defer db.Close()
 
 	// init cache
-	cachePool := initCache()
+	cachePool := initCache(redisHost, redisPort)
 	cacheApi, err := NewCacheAPI(cachePool)
 	if err != nil {
 		log.Printf("Error: initializing cacheApi %v", err)

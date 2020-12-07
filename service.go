@@ -11,6 +11,34 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+func initDatabase(pgHost, pgPort, pgUser, pgPassword, dbName string) (db *sqlx.DB) {
+	log.Println("Connecting to Database:", pgHost)
+	var err error
+	for retry := 0; retry < 10; retry++ {
+		db, err = sqlx.Connect("postgres", fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+			pgHost,
+			pgPort,
+			pgUser,
+			pgPassword,
+			dbName,
+		))
+		if err != nil {
+			log.Printf("Error: connecting to Database %v. Retrying in 2 seconds...", err)
+			time.Sleep(time.Second * 2)
+		} else {
+			err = nil
+			break
+		}
+	}
+
+	if err != nil {
+		log.Fatalf("Error: connecting to Database %v", err)
+	}
+
+	log.Println("Connected to Database")
+	return db
+}
+
 type ServiceAPI struct {
 	db    *sqlx.DB
 	cache *CacheAPI

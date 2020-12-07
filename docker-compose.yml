@@ -1,0 +1,33 @@
+version: '3'
+services:
+  reminder-app-api:
+    image: rovilay/reminder-app-api:1.0.1
+    ports:
+      - 3000:3000
+    environment: 
+      - PG_HOST=pgdb
+      - PG_PORT=5432
+      - PG_USER=postgres
+      - PG_PASSWORD=postgres
+      - DB_NAME=reminder_app_2
+      - REDIS_HOST=db_cache
+      - REDIS_PORT=6379
+    depends_on: 
+      - pgdb
+      - db_cache
+  pgdb:
+    image: postgres
+    ports:
+      - 5416:5432
+    environment: 
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=reminder_app_2
+    volumes: 
+      - pg-data:/var/lib/postgresql/data
+  db_cache:
+    image: redis
+    ports: 
+      - 6379:6379
+volumes: 
+  pg-data:
+    driver: local

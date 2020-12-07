@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -8,14 +9,18 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-func initCache() *redis.Pool {
+func initCache(host, port string) *redis.Pool {
+	if len(port) == 0 {
+		port = "6379"
+	}
 	log.Println("Creating Cache pool: redis")
 
 	return &redis.Pool{
 		MaxIdle:     10,
 		IdleTimeout: 240 * time.Second,
 		Dial: func() (redis.Conn, error) {
-			conn, err := redis.Dial("tcp", ":6379")
+			// conn, err := redis.Dial("tcp", ":6380")
+			conn, err := redis.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
 			if err != nil {
 				log.Printf("ERROR: fail init redis pool: %s", err.Error())
 				os.Exit(1)
